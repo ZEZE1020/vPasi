@@ -12,11 +12,12 @@ export async function streamResearch(
   query: string,
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
+  sessionId?: string | null,
 ): Promise<void> {
   const response = await fetch(`${API_URL}/api/research/stream`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, session_id: sessionId ?? null }),
     signal,
   });
 

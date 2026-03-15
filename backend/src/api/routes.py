@@ -6,6 +6,7 @@ and dispatched to the appropriate interface handler.
 """
 
 import logging
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Form, Request, Response
@@ -174,7 +175,7 @@ async def sms_webhook(
             "citations": [],
             "timeline": [],
             "error": None,
-        })
+        }, config={"configurable": {"thread_id": str(uuid.uuid4())}})
 
         answer = result.get("answer", "Could not process your query.")
         # Truncate for SMS (160 char limit per segment)

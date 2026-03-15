@@ -32,12 +32,17 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GOOGLE_PROJECT_ID: str
     GOOGLE_LOCATION: str = "us-central1"
-    VERTEX_AI_MODEL: str = "gemini-2.0-flash"
+    VERTEX_AI_MODEL: str = "gemini-2.0-flash-lite"
 
     # ── LangGraph / LangSmith ─────────────────────────────────────
     LANGSMITH_API_KEY: str = ""
     LANGCHAIN_TRACING_V2: bool = False
     LANGCHAIN_PROJECT: str = "vpasi"
+
+    # ── Research graph controls ────────────────────────────────────
+    RESEARCH_TOKEN_BUDGET: int = 600
+    RESEARCH_SKIP_REFLECTION_MAX_QUERY_WORDS: int = 12
+    RESEARCH_SKIP_REFLECTION_MIN_RESULTS: int = 3
 
     # ── Redis ────────────────────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"

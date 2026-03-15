@@ -15,6 +15,7 @@ from src.api.research import router as research_router
 from src.api.routes import router as webhook_router
 from src.core.config import settings
 from src.core.logging import setup_logging
+from src.models.database import Base, get_engine
 from src.services.redis_store import RedisSessionStore
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         "Starting vPasi backend",
         extra={"environment": settings.ENVIRONMENT, "project_id": settings.GOOGLE_PROJECT_ID},
     )
+
+    # Create Postgres tables if they don't exist
+    engine = get_engine()
+    if engine:
+        import src.models  # noqa: F401 — ensure models are registered
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        app.state.db_engine = engine
+        logger.info("Postgres tables ready")
+    else:
+        app.state.db_engine = None
+        logger.warning("DATABASE_URL not set — Postgres persistence disabled")
 
     # Initialize Redis connection pool
     redis_store = RedisSessionStore()

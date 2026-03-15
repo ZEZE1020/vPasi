@@ -8,12 +8,24 @@ function SendIcon() {
   );
 }
 
+function StopIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+      <rect x="3" y="3" width="10" height="10" rx="2" />
+    </svg>
+  );
+}
+
 function ChatInput({
   onSend,
   disabled,
+  isStreaming,
+  onStop,
 }: {
   onSend: (q: string) => void;
   disabled: boolean;
+  isStreaming: boolean;
+  onStop: () => void;
 }) {
   const [value, setValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -55,14 +67,24 @@ function ChatInput({
           disabled={disabled}
           rows={1}
         />
-        <button
-          className="send-button"
-          onClick={handleSubmit}
-          disabled={disabled || !value.trim()}
-          aria-label="Send message"
-        >
-          <SendIcon />
-        </button>
+        {isStreaming ? (
+          <button
+            className="send-button stop-button"
+            onClick={onStop}
+            aria-label="Stop generation"
+          >
+            <StopIcon />
+          </button>
+        ) : (
+          <button
+            className="send-button"
+            onClick={handleSubmit}
+            disabled={!value.trim()}
+            aria-label="Send message"
+          >
+            <SendIcon />
+          </button>
+        )}
       </div>
       <p className="chat-disclaimer">
         vPasi can make mistakes. Verify important trade information

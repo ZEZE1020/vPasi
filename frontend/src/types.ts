@@ -18,17 +18,26 @@ export interface ResearchResult {
   timeline: TimelineEntry[];
 }
 
+// ── Session Types ───────────────────────────────────────────
+
+export interface ChatSession {
+  id: string;
+  title: string; // first user message, truncated
+  createdAt: string; // ISO string for localStorage serialisation
+  messages: ChatMessage[];
+}
+
 // ── Chat Message Types ──────────────────────────────────────
 
-export type MessageRole = 'user' | 'assistant';
+export type MessageRole = "user" | "assistant";
 
 export type AssistantStatus =
-  | 'thinking'
-  | 'searching'
-  | 'reflecting'
-  | 'synthesizing'
-  | 'complete'
-  | 'error';
+  | "thinking"
+  | "searching"
+  | "reflecting"
+  | "synthesizing"
+  | "complete"
+  | "error";
 
 export interface ThinkingStep {
   id: string;
@@ -36,7 +45,7 @@ export interface ThinkingStep {
   label: string;
   detail: string;
   timestamp: string;
-  status: 'active' | 'complete';
+  status: "active" | "complete";
   data?: Record<string, unknown>;
 }
 
@@ -47,6 +56,11 @@ export interface ChatMessage {
   timestamp: Date;
   thinkingSteps?: ThinkingStep[];
   citations?: Citation[];
+  tokenUsage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
   isStreaming?: boolean;
   status?: AssistantStatus;
   error?: string;
@@ -64,4 +78,9 @@ export interface SSEDoneEvent {
   id: string;
   answer: string;
   citations: Citation[];
+  token_usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    total_tokens: number;
+  };
 }

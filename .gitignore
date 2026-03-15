@@ -53,3 +53,4 @@ frontend/.env.local
 # Keep compose files in version control
 
 CAPSTONE.md
+backend/credentials/

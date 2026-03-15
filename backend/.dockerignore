@@ -29,6 +29,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Credentials — mounted at runtime via Docker volume, never baked in
+credentials/
+
 # Testing & coverage
 .pytest_cache
 .coverage

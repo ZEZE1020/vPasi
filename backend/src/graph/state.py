@@ -38,5 +38,8 @@ class ResearchState(TypedDict):
     # Activity timeline entries for the frontend
     timeline: list[dict]
 
+    # Aggregated token usage across all LLM calls in a request
+    token_usage: dict[str, int]
+
     # Error state
     error: str | None
