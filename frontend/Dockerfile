@@ -31,8 +31,14 @@ RUN mkdir -p /etc/nginx/templates && printf 'server {\n\
   listen ${PORT};\n\
   location /api {\n\
     proxy_pass ${BACKEND_URL};\n\
+    proxy_http_version 1.1;\n\
+    proxy_set_header Connection "";\n\
     proxy_set_header Host $host;\n\
     proxy_set_header X-Real-IP $remote_addr;\n\
+    proxy_buffering off;\n\
+    proxy_cache off;\n\
+    proxy_read_timeout 3600s;\n\
+    add_header X-Accel-Buffering no;\n\
   }\n\
   location / {\n\
     root /usr/share/nginx/html;\n\
