@@ -197,6 +197,10 @@ html, body, #root {
   gap: 12px;
   max-width: var(--chat-max-width);
   margin: 0 auto 24px;
+}
+
+/* Only animate the very first render — use a wrapper added once */
+.message-enter {
   animation: messageAppear 0.3s ease-out;
 }
 

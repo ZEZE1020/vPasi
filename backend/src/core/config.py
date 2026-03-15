@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GOOGLE_PROJECT_ID: str
     GOOGLE_LOCATION: str = "us-central1"
-    VERTEX_AI_MODEL: str = "gemini-2.0-flash-lite"
+    VERTEX_AI_MODEL: str = "gemini-2.5-flash"
 
     # ── LangGraph / LangSmith ─────────────────────────────────────
     LANGSMITH_API_KEY: str = ""
@@ -40,12 +40,17 @@ class Settings(BaseSettings):
     LANGCHAIN_PROJECT: str = "vpasi"
 
     # ── Research graph controls ────────────────────────────────────
-    RESEARCH_TOKEN_BUDGET: int = 600
+    # 2.5 Flash uses more tokens for better reasoning — budget raised accordingly
+    RESEARCH_TOKEN_BUDGET: int = 8000
     RESEARCH_SKIP_REFLECTION_MAX_QUERY_WORDS: int = 12
     RESEARCH_SKIP_REFLECTION_MIN_RESULTS: int = 3
+    # Rate limit: Gemini 2.5 Flash free tier = 10 RPM
+    GEMINI_MAX_CONCURRENT: int = 2
+    GEMINI_RETRY_MAX: int = 3
+    GEMINI_RETRY_BASE_DELAY: float = 10.0  # seconds — backs off on 429
 
     # ── Redis ────────────────────────────────────────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
+    REDIS_URL: str = ""  # Optional, e.g., "redis://localhost:6379/0"
     REDIS_SESSION_TTL: int = 300  # seconds — 5 minute USSD timeout
 
     # ── Postgres ─────────────────────────────────────────────────

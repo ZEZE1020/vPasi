@@ -30,6 +30,8 @@ interface UseChatOptions {
 export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Track accumulated steps across onStep calls
+  const stepsRef = useRef<ThinkingStep[]>([]);
 
   const sendMessage = useCallback(
     async (query: string, sessionId?: string | null) => {
@@ -41,7 +43,9 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
       };
 
       const assistantId = crypto.randomUUID();
-      const assistantMsg: ChatMessage = {
+      stepsRef.current = [];
+
+      setMessages((prev) => [...prev, userMsg, {
         id: assistantId,
         role: "assistant",
         content: "",
@@ -49,11 +53,14 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
         thinkingSteps: [],
         citations: [],
         isStreaming: true,
-        status: "thinking",
-      };
-
-      setMessages((prev) => [...prev, userMsg, assistantMsg]);
+        status: "thinking" as AssistantStatus,
+      }]);
       setIsStreaming(true);
+
+      const updateMsg = (patch: Partial<ChatMessage>) =>
+        setMessages((prev) =>
+          prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m))
+        );
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
@@ -67,84 +74,55 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
           query,
           {
             onStep: (event) => {
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== assistantId) return msg;
-                  const completedSteps: ThinkingStep[] = [
-                    ...(msg.thinkingSteps || []).map((s) => ({
-                      ...s,
-                      status: "complete" as const,
-                    })),
-                    {
-                      id: crypto.randomUUID(),
-                      node: event.node,
-                      label: NODE_LABELS[event.node] || event.node,
-                      detail: event.detail,
-                      timestamp: new Date().toISOString(),
-                      status: "complete" as const,
-                      data: event.data,
-                    },
-                  ];
-                  return {
-                    ...msg,
-                    thinkingSteps: completedSteps,
-                    status: NODE_STATUS[event.node] || msg.status,
-                    content:
-                      event.node === "synthesize"
-                        ? (event.data.answer as string) || ""
-                        : msg.content,
-                    citations:
-                      event.node === "synthesize"
-                        ? (event.data.citations as Citation[]) || []
-                        : msg.citations,
-                  };
+              const newStep: ThinkingStep = {
+                id: crypto.randomUUID(),
+                node: event.node,
+                label: NODE_LABELS[event.node] || event.node,
+                detail: event.detail,
+                timestamp: new Date().toISOString(),
+                status: "complete",
+                data: event.data,
+              };
+              stepsRef.current = [...stepsRef.current, newStep];
+              updateMsg({
+                thinkingSteps: stepsRef.current,
+                status: NODE_STATUS[event.node] || "thinking",
+                ...(event.node === "synthesize" && {
+                  content: (event.data.answer as string) || "",
+                  citations: (event.data.citations as Citation[]) || [],
                 }),
-              );
+              });
             },
             onDone: (event) => {
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== assistantId) return msg;
-                  const tokenUsage = event.token_usage;
-                  const tokenStep: ThinkingStep | null = tokenUsage
-                    ? {
-                        id: crypto.randomUUID(),
-                        node: "token_usage",
-                        label: "Token usage",
-                        detail: `Total ${tokenUsage.total_tokens} (in ${tokenUsage.input_tokens}, out ${tokenUsage.output_tokens})`,
-                        timestamp: new Date().toISOString(),
-                        status: "complete",
-                        data: tokenUsage,
-                      }
-                    : null;
-                  return {
-                    ...msg,
-                    content: event.answer,
-                    citations: event.citations,
-                    tokenUsage,
-                    thinkingSteps: tokenStep
-                      ? [...(msg.thinkingSteps || []), tokenStep]
-                      : msg.thinkingSteps,
-                    isStreaming: false,
+              const tokenUsage = event.token_usage;
+              const tokenStep: ThinkingStep | null = tokenUsage
+                ? {
+                    id: crypto.randomUUID(),
+                    node: "token_usage",
+                    label: "Token usage",
+                    detail: `Total ${tokenUsage.total_tokens} (in ${tokenUsage.input_tokens}, out ${tokenUsage.output_tokens})`,
+                    timestamp: new Date().toISOString(),
                     status: "complete",
-                  };
-                }),
-              );
+                    data: tokenUsage,
+                  }
+                : null;
+              const finalSteps = tokenStep
+                ? [...stepsRef.current, tokenStep]
+                : stepsRef.current;
+              stepsRef.current = [];
+              updateMsg({
+                content: event.answer,
+                citations: event.citations,
+                tokenUsage,
+                thinkingSteps: finalSteps,
+                isStreaming: false,
+                status: "complete",
+              });
               setIsStreaming(false);
             },
             onError: (error) => {
-              setMessages((prev) =>
-                prev.map((msg) => {
-                  if (msg.id !== assistantId) return msg;
-                  return {
-                    ...msg,
-                    content: "An error occurred during research.",
-                    isStreaming: false,
-                    status: "error",
-                    error,
-                  };
-                }),
-              );
+              stepsRef.current = [];
+              updateMsg({ content: "An error occurred during research.", isStreaming: false, status: "error", error });
               setIsStreaming(false);
             },
           },
@@ -153,18 +131,8 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
         );
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.id !== assistantId) return msg;
-              return {
-                ...msg,
-                content: "Connection failed. Please try again.",
-                isStreaming: false,
-                status: "error",
-                error: (err as Error).message,
-              };
-            }),
-          );
+          stepsRef.current = [];
+          updateMsg({ content: "Connection failed. Please try again.", isStreaming: false, status: "error", error: (err as Error).message });
           setIsStreaming(false);
         }
       }
@@ -174,6 +142,7 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
 
   const stopStreaming = useCallback(() => {
     abortControllerRef.current?.abort();
+    stepsRef.current = [];
     setIsStreaming(false);
   }, []);
 

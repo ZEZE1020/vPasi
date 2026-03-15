@@ -26,16 +26,11 @@ async def verify_at_signature(
     """
     Validate Africa's Talking webhook callback.
 
-    In dev mode, skip validation if header is absent.
-    In production, reject requests without the expected API key header.
+    AT sandbox never sends the signature header — skip validation
+    entirely in dev/sandbox mode. In production, validate the header.
     """
-    if (
-        settings.ENVIRONMENT == "dev"
-        and x_africastalking_signature is None
-    ):
-        logger.debug(
-            "Skipping AT signature validation in dev mode"
-        )
+    # Sandbox and dev: AT does not send signature headers
+    if settings.ENVIRONMENT != "prod" or settings.AT_USERNAME == "sandbox":
         return
 
     if x_africastalking_signature is None:
@@ -44,7 +39,6 @@ async def verify_at_signature(
             detail="Missing X-AfricasTalking-Signature header",
         )
 
-    # AT sends the API key as the signature value
     if x_africastalking_signature != settings.AT_API_KEY:
         logger.warning("Invalid AT webhook signature received")
         raise HTTPException(

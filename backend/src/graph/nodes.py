@@ -20,8 +20,16 @@ from src.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Limit concurrent Gemini calls to avoid quota exhaustion
-_llm_semaphore = asyncio.Semaphore(5)
+# Semaphore is created lazily on first use so settings load doesn't
+# happen at import time (which would fail without a .env file present)
+_llm_semaphore: asyncio.Semaphore | None = None
+
+
+def _get_semaphore() -> asyncio.Semaphore:
+    global _llm_semaphore
+    if _llm_semaphore is None:
+        _llm_semaphore = asyncio.Semaphore(settings.GEMINI_MAX_CONCURRENT)
+    return _llm_semaphore
 
 
 def _empty_token_usage() -> dict[str, int]:
@@ -169,24 +177,44 @@ def _get_query_llm() -> ChatGoogleGenerativeAI:
     )
 
 
-async def _invoke_llm(prompt: str, timeout: float = 30.0) -> tuple[str, dict[str, int]]:
-    """Invoke the LLM with concurrency control and a timeout."""
-    async with _llm_semaphore:
-        llm = _get_llm()
-        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
-        text = _extract_text(getattr(response, "content", ""))
-        usage = _extract_usage(response)
-        return text, usage
+async def _invoke_with_retry(
+    llm: ChatGoogleGenerativeAI,
+    prompt: str,
+    timeout: float,
+) -> tuple[str, dict[str, int]]:
+    """Call the LLM, retrying with exponential backoff on 429 rate-limit errors."""
+    delay = settings.GEMINI_RETRY_BASE_DELAY
+    for attempt in range(settings.GEMINI_RETRY_MAX):
+        try:
+            response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
+            text = _extract_text(getattr(response, "content", ""))
+            usage = _extract_usage(response)
+            return text, usage
+        except Exception as exc:
+            is_rate_limit = "429" in str(exc) or "quota" in str(exc).lower() or "rate" in str(exc).lower()
+            is_last = attempt == settings.GEMINI_RETRY_MAX - 1
+            if is_rate_limit and not is_last:
+                logger.warning(
+                    "Gemini rate limit hit, retrying in %.0fs (attempt %d/%d)",
+                    delay, attempt + 1, settings.GEMINI_RETRY_MAX,
+                )
+                await asyncio.sleep(delay)
+                delay *= 2  # exponential backoff: 10s → 20s → 40s
+            else:
+                raise
+    raise RuntimeError("Unreachable")
 
 
-async def _invoke_query_llm(prompt: str, timeout: float = 15.0) -> tuple[str, dict[str, int]]:
-    """Invoke the lighter query LLM with concurrency control."""
-    async with _llm_semaphore:
-        llm = _get_query_llm()
-        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
-        text = _extract_text(getattr(response, "content", ""))
-        usage = _extract_usage(response)
-        return text, usage
+async def _invoke_llm(prompt: str, timeout: float = 60.0) -> tuple[str, dict[str, int]]:
+    """Invoke the synthesis LLM with concurrency control and retry."""
+    async with _get_semaphore():
+        return await _invoke_with_retry(_get_llm(), prompt, timeout)
+
+
+async def _invoke_query_llm(prompt: str, timeout: float = 30.0) -> tuple[str, dict[str, int]]:
+    """Invoke the query-generation LLM with concurrency control and retry."""
+    async with _get_semaphore():
+        return await _invoke_with_retry(_get_query_llm(), prompt, timeout)
 
 
 def _extract_usage(response: Any) -> dict[str, int]:
@@ -245,8 +273,9 @@ async def generate_queries(state: dict) -> dict:
 
     try:
         prompt = (
-            "You are a research assistant. Given a user question, generate "
-            "2-3 focused web search queries that would help answer it. "
+            f"{SYSTEM_INSTRUCTION}\n\n"
+            "Given the user's trade question, generate 2-3 focused web search queries "
+            "targeting East African markets, regulations, and border crossings. "
             "Return ONLY a JSON array of strings, no other text.\n\n"
             f"User question: {user_query}"
         )
@@ -403,11 +432,11 @@ async def reflect(state: dict) -> dict:
             for r in search_results[:8]
         )
         prompt = (
-            "You are evaluating search results for a research query.\n\n"
+            f"{SYSTEM_INSTRUCTION}\n\n"
             f"Original question: {user_query}\n\n"
             f"Search results:\n{snippets}\n\n"
-            "In 1-2 sentences, assess: do these results adequately "
-            "answer the question? What gaps remain?"
+            "In 1-2 sentences, assess: do these results adequately answer the question "
+            "for an East African cross-border trader? What gaps remain?"
         )
         reflection, usage = await _invoke_llm(prompt)
     except Exception:
@@ -498,10 +527,10 @@ async def synthesize(state: dict) -> dict:
             for i, r in enumerate(search_results[:8])
         )
         prompt = (
-            "You are a research assistant. Synthesize a clear, "
-            "comprehensive answer to the user's question based on "
-            "the search results below. Include citation numbers "
-            "[1], [2], etc. to reference your sources.\n\n"
+            f"{SYSTEM_INSTRUCTION}\n\n"
+            "Synthesize a clear, practical answer for an informal cross-border trader "
+            "in East Africa. Include citation numbers [1], [2], etc. "
+            "Highlight specific duties, documents, or border procedures where relevant.\n\n"
             f"Question: {user_query}\n\n"
             f"Sources:\n{sources}\n\n"
             "Provide a well-structured answer with citations."

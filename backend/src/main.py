@@ -42,16 +42,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.db_engine = None
         logger.warning("DATABASE_URL not set — Postgres persistence disabled")
 
-    # Initialize Redis connection pool
-    redis_store = RedisSessionStore()
-    await redis_store.connect()
-    app.state.redis = redis_store
+    # Initialize Redis connection pool if configured
+    if settings.REDIS_URL:
+        redis_store = RedisSessionStore()
+        await redis_store.connect()
+        app.state.redis = redis_store
+        logger.info("Redis connection pool initialized")
+    else:
+        app.state.redis = None
+        logger.warning("REDIS_URL not set — USSD support disabled")
 
     yield
 
     # Graceful shutdown
     logger.info("Shutting down vPasi backend")
-    await redis_store.disconnect()
+    if app.state.redis:
+        await app.state.redis.disconnect()
 
 
 def create_app() -> FastAPI:
