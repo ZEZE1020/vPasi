@@ -11,6 +11,7 @@ env:
   BACKEND_SERVICE_NAME: vpasi-backend
   FRONTEND_SERVICE_NAME: vpasi-frontend
   REPO_NAME: vpasi-repo
+  CLOUD_RUN_RUNTIME_SA: ${{ secrets.CLOUD_RUN_RUNTIME_SA }}
 
 jobs:
   build-and-deploy:
@@ -27,6 +28,30 @@ jobs:
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+
+      - name: Validate required deployment configuration
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ env.GCP_PROJECT_ID }}" ]]; then
+            echo "Missing required GitHub secret: GCP_PROJECT_ID"
+            exit 1
+          fi
+          if [[ -z "${{ env.CLOUD_RUN_RUNTIME_SA }}" ]]; then
+            echo "Missing required GitHub secret: CLOUD_RUN_RUNTIME_SA"
+            echo "Create a dedicated Cloud Run runtime service account and grant it Secret Manager Secret Accessor on required secrets."
+            exit 1
+          fi
+
+      - name: Enable required Google Cloud APIs
+        run: |
+          set -euo pipefail
+          gcloud services enable \
+            run.googleapis.com \
+            artifactregistry.googleapis.com \
+            secretmanager.googleapis.com \
+            sqladmin.googleapis.com \
+            serviceusage.googleapis.com \
+            --project="${{ env.GCP_PROJECT_ID }}"
 
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
@@ -51,6 +76,7 @@ jobs:
             --image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.BACKEND_SERVICE_NAME }}:${{ github.sha }} \
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
+            --service-account=${{ env.CLOUD_RUN_RUNTIME_SA }} \
             --allow-unauthenticated \
             --set-secrets="AT_API_KEY=AT_API_KEY:latest,AT_USERNAME=AT_USERNAME:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,POSTGRES_PASSWORD=POSTGRES_PASSWORD:latest" \
             --set-env-vars="GOOGLE_PROJECT_ID=${{ env.GCP_PROJECT_ID }},GOOGLE_LOCATION=${{ env.GCP_REGION }},DATABASE_URL=postgresql+asyncpg://vpasi:${{ secrets.POSTGRES_PASSWORD }}@//cloudsql/${{ env.GCP_PROJECT_ID }}:${{ env.GCP_REGION }}:vpasi-postgres/vpasi" \
@@ -63,8 +89,11 @@ jobs:
             --image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}:${{ github.sha }} \
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
+            --service-account=${{ env.CLOUD_RUN_RUNTIME_SA }} \
             --allow-unauthenticated \
             --set-env-vars="VITE_API_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')"
+          FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
+          echo "url=${FRONTEND_URL}" >> "$GITHUB_OUTPUT"
 
       - name: Show Frontend URL
         run: echo "Frontend is deployed at ${{ steps.deploy_frontend.outputs.url }}"
