@@ -40,6 +40,8 @@ services:
     container_name: vpasi-frontend
     ports:
       - "5173:80"
+    environment:
+      - VITE_API_URL=http://backend:8000
     depends_on:
       - backend
     restart: unless-stopped
