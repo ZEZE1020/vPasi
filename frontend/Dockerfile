@@ -27,7 +27,7 @@ FROM nginx:alpine AS prod
 COPY --from=build /app/dist /usr/share/nginx/html
 
 # Nginx template: Cloud Run PORT + runtime backend URL proxy
-RUN printf 'server {\n\
+RUN mkdir -p /etc/nginx/templates && printf 'server {\n\
   listen ${PORT};\n\
   location /api {\n\
     proxy_pass ${BACKEND_URL};\n\
