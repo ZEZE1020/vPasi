@@ -26,11 +26,11 @@ RUN npm run build
 FROM nginx:alpine AS prod
 COPY --from=build /app/dist /usr/share/nginx/html
 
-# Nginx config: reverse proxy /api to backend + SPA fallback
+# Nginx template: Cloud Run PORT + runtime backend URL proxy
 RUN printf 'server {\n\
-  listen 80;\n\
+  listen ${PORT};\n\
   location /api {\n\
-    proxy_pass http://backend:8000;\n\
+    proxy_pass ${BACKEND_URL};\n\
     proxy_set_header Host $host;\n\
     proxy_set_header X-Real-IP $remote_addr;\n\
   }\n\
@@ -38,7 +38,10 @@ RUN printf 'server {\n\
     root /usr/share/nginx/html;\n\
     try_files $uri $uri/ /index.html;\n\
   }\n\
-}\n' > /etc/nginx/conf.d/default.conf
+}\n' > /etc/nginx/templates/default.conf.template
 
-EXPOSE 80
+ENV PORT=8080
+ENV BACKEND_URL=http://127.0.0.1:8080
+
+EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]

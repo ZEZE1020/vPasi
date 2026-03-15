@@ -87,13 +87,14 @@ jobs:
       - name: Deploy frontend to Cloud Run
         id: deploy_frontend
         run: |
+          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
           gcloud run deploy ${{ env.FRONTEND_SERVICE_NAME }} \
             --image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.FRONTEND_SERVICE_NAME }}:${{ github.sha }} \
             --region=${{ env.GCP_REGION }} \
             --platform=managed \
             --service-account=${{ env.CLOUD_RUN_RUNTIME_SA }} \
             --allow-unauthenticated \
-            --set-env-vars="VITE_API_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')"
+            --set-env-vars="VITE_API_URL=${BACKEND_URL},BACKEND_URL=${BACKEND_URL}"
           FRONTEND_URL=$(gcloud run services describe ${{ env.FRONTEND_SERVICE_NAME }} --region=${{ env.GCP_REGION }} --format='value(status.url)')
           echo "url=${FRONTEND_URL}" >> "$GITHUB_OUTPUT"
 
