@@ -30,14 +30,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         extra={"environment": settings.ENVIRONMENT, "project_id": settings.GOOGLE_PROJECT_ID},
     )
 
-    # Create Postgres tables if they don't exist
+    # Create Postgres tables if configured. Do not crash app startup if DB is unavailable.
     engine = get_engine()
     if engine:
-        import src.models  # noqa: F401 — ensure models are registered
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        app.state.db_engine = engine
-        logger.info("Postgres tables ready")
+        try:
+            import src.models  # noqa: F401 — ensure models are registered
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            app.state.db_engine = engine
+            logger.info("Postgres tables ready")
+        except Exception:
+            app.state.db_engine = None
+            logger.exception("Postgres initialization failed — continuing without DB persistence")
     else:
         app.state.db_engine = None
         logger.warning("DATABASE_URL not set — Postgres persistence disabled")
