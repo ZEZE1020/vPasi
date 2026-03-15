@@ -42,7 +42,8 @@ jobs:
             exit 1
           fi
 
-      - name: Enable required Google Cloud APIs
+      - name: Ensure required Google Cloud APIs are enabled (best effort)
+        continue-on-error: true
         run: |
           set -euo pipefail
           gcloud services enable \
@@ -51,7 +52,8 @@ jobs:
             secretmanager.googleapis.com \
             sqladmin.googleapis.com \
             serviceusage.googleapis.com \
-            --project="${{ env.GCP_PROJECT_ID }}"
+            --project="${{ env.GCP_PROJECT_ID }}" || \
+          echo "::warning::Could not enable APIs with the deployer service account. Enable APIs once with an owner account in Cloud Console."
 
       - name: Configure Docker
         run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
