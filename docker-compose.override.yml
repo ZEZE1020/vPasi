@@ -1,0 +1,41 @@
+# ============================================================
+# vPasi — Docker Compose OVERRIDE (development)
+# ============================================================
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up --build
+#
+# Adds source mounts and hot-reload for backend and frontend.
+# ============================================================
+
+services:
+  backend:
+    volumes:
+      - ./backend/src:/app/src:ro
+    command: >
+      uvicorn src.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir /app/src
+      --log-level debug
+    environment:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+    command: npm run dev -- --host 0.0.0.0
+    ports:
+      - "3000:5173"
+    environment:
+      # Empty VITE_API_URL = use Vite proxy
+      - VITE_API_URL=
+      # Tell Vite proxy to reach backend via Docker network
+      - VITE_BACKEND_URL=http://backend:8000

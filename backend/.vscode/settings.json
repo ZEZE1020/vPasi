@@ -1,0 +1,42 @@
+{
+  "// vPasi Backend — VS Code Settings": "",
+
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.fixAll.ruff": "explicit",
+      "source.organizeImports.ruff": "explicit"
+    }
+  },
+
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.analysis.typeCheckingMode": "standard",
+  "python.analysis.autoImportCompletions": true,
+
+  "mypy-type-checker.args": [
+    "--strict",
+    "--python-version=3.12"
+  ],
+
+  "ruff.configuration": "${workspaceFolder}/pyproject.toml",
+  "ruff.lint.run": "onSave",
+  "ruff.format.args": [],
+
+  "editor.rulers": [100],
+  "files.trimTrailingWhitespace": true,
+  "files.insertFinalNewline": true,
+
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    ".mypy_cache": true,
+    ".ruff_cache": true,
+    ".pytest_cache": true
+  },
+
+  "search.exclude": {
+    ".venv": true,
+    "uv.lock": true
+  }
+}
