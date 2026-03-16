@@ -29,9 +29,10 @@ function AssistantMessage({ message }: { message: ChatMessage }) {
         <VPasiIcon />
       </div>
       <div className="message-content">
-        {message.thinkingSteps && message.thinkingSteps.length > 0 && (
+        {(message.isStreaming ||
+          (message.thinkingSteps && message.thinkingSteps.length > 0)) && (
           <ThinkingSection
-            steps={message.thinkingSteps}
+            steps={message.thinkingSteps || []}
             isStreaming={message.isStreaming || false}
             status={message.status || "complete"}
           />
