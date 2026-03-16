@@ -4,7 +4,8 @@
 > Combines a LangGraph research agent with multi-channel access (Web UI, USSD, Voice, WhatsApp, SMS).
 
 ## Architecture
-
+![Vpasi Trading Platform Architecture](vpasi-trading-platform-architecture-2026-03-16%20(4).png)
+### Codebase
 ```
 vPasi/
 ├── backend/                 # FastAPI + LangGraph research agent
