@@ -262,27 +262,33 @@ async def get_suggestions(request: Request) -> list[str]:
     recent: list[str] = []
 
     if factory:
-        async with factory() as db:
-            result = await db.execute(
-                select(ChatSession)
-                .where(ChatSession.messages != [])
-                .order_by(ChatSession.updated_at.desc())
-                .limit(10)
-            )
-            sessions = result.scalars().all()
+        try:
+            async with factory() as db:
+                result = await db.execute(
+                    select(ChatSession)
+                    .order_by(ChatSession.updated_at.desc())
+                    .limit(25)
+                )
+                sessions = result.scalars().all()
 
-        seen: set[str] = set()
-        for s in sessions:
-            for msg in s.messages:
-                if msg.get("role") == "user":
-                    q = msg.get("content", "").strip()
-                    if q and q not in seen:
-                        seen.add(q)
-                        recent.append(q[:80] + ("…" if len(q) > 80 else ""))
-                    if len(recent) >= 2:
-                        break
-            if len(recent) >= 2:
-                break
+            seen: set[str] = set()
+            for s in sessions:
+                messages = s.messages if isinstance(s.messages, list) else []
+                if not messages:
+                    continue
+
+                for msg in messages:
+                    if msg.get("role") == "user":
+                        q = msg.get("content", "").strip()
+                        if q and q not in seen:
+                            seen.add(q)
+                            recent.append(q[:80] + ("…" if len(q) > 80 else ""))
+                        if len(recent) >= 2:
+                            break
+                if len(recent) >= 2:
+                    break
+        except Exception:
+            logger.exception("Failed to load dynamic suggestions, using fallback suggestions")
 
     # Fill remaining slots with non-duplicate fallbacks
     import random
