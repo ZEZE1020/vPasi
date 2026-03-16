@@ -15,18 +15,21 @@ WORKDIR /app
 
 # Install dependencies first (cached unless pyproject.toml changes)
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev
 
 # Copy source code and install the project itself
 COPY src/ ./src/
 COPY README.md ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev
 
 
 # ── Stage 2: Runtime ────────────────────────────────────────
 FROM python:3.12-slim-bookworm AS runtime
+
+# Install runtime system dependencies (required for psycopg2/postgres)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends libpq5 && \
+    rm -rf /var/lib/apt/lists/*
 
 # Security: run as non-root
 RUN groupadd --gid 1001 appgroup && \
@@ -48,7 +51,7 @@ USER appuser
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import os, urllib.request; urllib.request.urlopen(f\"http://localhost:{os.environ.get('PORT', '8080')}/health\")" || exit 1
+    CMD python -c "import os, urllib.request; port=os.environ.get('PORT', '8080'); urllib.request.urlopen('http://localhost:'+port+'/health')" || exit 1
 
 # Cloud Run sets PORT env var; default to 8080
 CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8080} --workers 2 --log-level info --access-log"]
