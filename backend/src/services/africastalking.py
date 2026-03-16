@@ -6,6 +6,7 @@ All AT webhook response formatting is centralized here.
 """
 
 import logging
+import threading
 from xml.etree.ElementTree import Element, SubElement, tostring
 
 import africastalking
@@ -24,18 +25,21 @@ class AfricasTalkingClient:
     """
 
     _initialized: bool = False
+    _lock = threading.Lock()
 
     def __init__(self) -> None:
         if not AfricasTalkingClient._initialized:
-            africastalking.initialize(
-                username=settings.AT_USERNAME,
-                api_key=settings.AT_API_KEY,
-            )
-            AfricasTalkingClient._initialized = True
-            logger.info(
-                "Africa's Talking SDK initialized",
-                extra={"username": settings.AT_USERNAME},
-            )
+            with AfricasTalkingClient._lock:
+                if not AfricasTalkingClient._initialized:
+                    africastalking.initialize(
+                        username=settings.AT_USERNAME,
+                        api_key=settings.AT_API_KEY,
+                    )
+                    AfricasTalkingClient._initialized = True
+                    logger.info(
+                        "Africa's Talking SDK initialized",
+                        extra={"username": settings.AT_USERNAME},
+                    )
 
         self.sms = africastalking.SMS
         self.voice = africastalking.Voice
