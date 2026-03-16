@@ -54,3 +54,6 @@ frontend/.env.local
 
 CAPSTONE.md
 backend/credentials/
+
+key.json
+
