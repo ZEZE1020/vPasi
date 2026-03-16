@@ -43,23 +43,35 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
       };
 
       const assistantId = crypto.randomUUID();
-      stepsRef.current = [];
+      const connectingStep: ThinkingStep = {
+        id: crypto.randomUUID(),
+        node: "connecting",
+        label: "Connecting stream",
+        detail: "Starting real-time research updates...",
+        timestamp: new Date().toISOString(),
+        status: "active",
+      };
+      stepsRef.current = [connectingStep];
 
-      setMessages((prev) => [...prev, userMsg, {
-        id: assistantId,
-        role: "assistant",
-        content: "",
-        timestamp: new Date(),
-        thinkingSteps: [],
-        citations: [],
-        isStreaming: true,
-        status: "thinking" as AssistantStatus,
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        userMsg,
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          timestamp: new Date(),
+          thinkingSteps: stepsRef.current,
+          citations: [],
+          isStreaming: true,
+          status: "thinking" as AssistantStatus,
+        },
+      ]);
       setIsStreaming(true);
 
       const updateMsg = (patch: Partial<ChatMessage>) =>
         setMessages((prev) =>
-          prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m))
+          prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)),
         );
 
       const controller = new AbortController();
@@ -67,7 +79,10 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
 
       try {
         if (sessionId && onTitled) {
-          onTitled(sessionId, query.slice(0, 60) + (query.length > 60 ? "…" : ""));
+          onTitled(
+            sessionId,
+            query.slice(0, 60) + (query.length > 60 ? "…" : ""),
+          );
         }
 
         await streamResearch(
@@ -83,7 +98,13 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
                 status: "complete",
                 data: event.data,
               };
-              stepsRef.current = [...stepsRef.current, newStep];
+              const hasOnlyPlaceholder =
+                stepsRef.current.length === 1 &&
+                stepsRef.current[0].node === "connecting";
+
+              stepsRef.current = hasOnlyPlaceholder
+                ? [newStep]
+                : [...stepsRef.current, newStep];
               updateMsg({
                 thinkingSteps: stepsRef.current,
                 status: NODE_STATUS[event.node] || "thinking",
@@ -106,9 +127,12 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
                     data: tokenUsage,
                   }
                 : null;
+              const completedSteps = stepsRef.current.filter(
+                (step) => step.node !== "connecting",
+              );
               const finalSteps = tokenStep
-                ? [...stepsRef.current, tokenStep]
-                : stepsRef.current;
+                ? [...completedSteps, tokenStep]
+                : completedSteps;
               stepsRef.current = [];
               updateMsg({
                 content: event.answer,
@@ -122,7 +146,12 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
             },
             onError: (error) => {
               stepsRef.current = [];
-              updateMsg({ content: "An error occurred during research.", isStreaming: false, status: "error", error });
+              updateMsg({
+                content: "An error occurred during research.",
+                isStreaming: false,
+                status: "error",
+                error,
+              });
               setIsStreaming(false);
             },
           },
@@ -132,7 +161,12 @@ export function useChat({ messages, setMessages, onTitled }: UseChatOptions) {
       } catch (err) {
         if ((err as Error).name !== "AbortError") {
           stepsRef.current = [];
-          updateMsg({ content: "Connection failed. Please try again.", isStreaming: false, status: "error", error: (err as Error).message });
+          updateMsg({
+            content: "Connection failed. Please try again.",
+            isStreaming: false,
+            status: "error",
+            error: (err as Error).message,
+          });
           setIsStreaming(false);
         }
       }

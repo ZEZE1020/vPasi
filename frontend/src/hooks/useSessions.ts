@@ -28,7 +28,10 @@ interface SessionDetail {
   messages: ChatMessage[];
 }
 
-function toSession(s: SessionSummary, messages: ChatMessage[] = []): ChatSession {
+function toSession(
+  s: SessionSummary,
+  messages: ChatMessage[] = [],
+): ChatSession {
   return {
     id: s.id,
     title: s.title,
@@ -42,7 +45,7 @@ const LAST_SESSION_KEY = "vpasi_last_session_id";
 export function useSessions() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionIdState] = useState<string | null>(
-    () => localStorage.getItem(LAST_SESSION_KEY)
+    () => localStorage.getItem(LAST_SESSION_KEY),
   );
   const [activeMessages, setActiveMessages] = useState<ChatMessage[]>([]);
 
@@ -73,22 +76,48 @@ export function useSessions() {
       setActiveMessages([]);
       return;
     }
+
+    let cancelled = false;
+
     apiFetch<SessionDetail>(`/api/sessions/${activeSessionId}`)
       .then((detail) => {
+        if (cancelled) return;
+
         const msgs = detail.messages.map((m: any) => ({
           ...m,
           timestamp: new Date(m.timestamp),
         }));
-        setActiveMessages(msgs);
+
+        // Never clobber active local stream state with a stale backend snapshot.
+        setActiveMessages((prev) => {
+          const hasInFlightStream = prev.some((m) => m.isStreaming);
+          if (hasInFlightStream) {
+            return prev;
+          }
+
+          // Prefer richer local state if backend has not caught up yet.
+          if (prev.length > msgs.length) {
+            return prev;
+          }
+
+          return msgs;
+        });
       })
       .catch(() => {
+        if (cancelled) return;
         // Session gone — clear it
         setActiveSessionId(null);
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [activeSessionId, setActiveSessionId]);
 
   const createSession = useCallback(async (): Promise<string> => {
-    const summary = await apiFetch<SessionSummary>("/api/sessions", { method: "POST" });
+    const summary = await apiFetch<SessionSummary>("/api/sessions", {
+      method: "POST",
+    });
     const session = toSession(summary);
     setSessions((prev) => [session, ...prev]);
     setActiveSessionId(session.id);
@@ -97,19 +126,22 @@ export function useSessions() {
   }, [setActiveSessionId]);
 
   const updateSessionTitle = useCallback((id: string, title: string) => {
-    setSessions((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, title } : s))
-    );
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
   }, []);
 
-  const deleteSession = useCallback(async (id: string) => {
-    await apiFetch(`/api/sessions/${id}`, { method: "DELETE" }).catch(() => {});
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (activeSessionId === id) {
-      setActiveSessionId(null);
-      setActiveMessages([]);
-    }
-  }, [activeSessionId, setActiveSessionId]);
+  const deleteSession = useCallback(
+    async (id: string) => {
+      await apiFetch(`/api/sessions/${id}`, { method: "DELETE" }).catch(
+        () => {},
+      );
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (activeSessionId === id) {
+        setActiveSessionId(null);
+        setActiveMessages([]);
+      }
+    },
+    [activeSessionId, setActiveSessionId],
+  );
 
   return {
     sessions,
