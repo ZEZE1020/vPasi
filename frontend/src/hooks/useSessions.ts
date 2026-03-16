@@ -112,7 +112,7 @@ export function useSessions() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, setActiveSessionId]);
+  }, [activeSessionId, setActiveSessionId, setActiveMessages]);
 
   const createSession = useCallback(async (): Promise<string> => {
     const summary = await apiFetch<SessionSummary>("/api/sessions", {
@@ -123,7 +123,7 @@ export function useSessions() {
     setActiveSessionId(session.id);
     setActiveMessages([]);
     return session.id;
-  }, [setActiveSessionId]);
+  }, [setActiveSessionId, setSessions, setActiveMessages]);
 
   const updateSessionTitle = useCallback((id: string, title: string) => {
     setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)));
@@ -140,7 +140,7 @@ export function useSessions() {
         setActiveMessages([]);
       }
     },
-    [activeSessionId, setActiveSessionId],
+    [activeSessionId, setActiveSessionId, setSessions],
   );
 
   return {
