@@ -165,19 +165,26 @@ async def get_research(research_id: str) -> ResearchResponse:
 async def create_session(request: Request) -> SessionSummary:
     """Create a new empty chat session."""
     factory = _get_session_factory(request)
-    session = ChatSession(id=str(uuid.uuid4()), title="New research", messages=[])
+    now = datetime.now(UTC)
+    session = ChatSession(
+        id=str(uuid.uuid4()), title="New research", messages=[],
+        created_at=now, updated_at=now
+    )
 
     if factory:
-        async with factory() as db:
-            db.add(session)
-            await db.commit()
-            await db.refresh(session)
+        try:
+            async with factory() as db:
+                db.add(session)
+                await db.commit()
+                await db.refresh(session)
+        except Exception:
+            logger.exception("Failed to commit session to database")
 
     return SessionSummary(
         id=session.id,
         title=session.title,
-        created_at=session.created_at.isoformat(),
-        updated_at=session.updated_at.isoformat(),
+        created_at=session.created_at.isoformat() if session.created_at else now.isoformat(),
+        updated_at=session.updated_at.isoformat() if session.updated_at else now.isoformat(),
         message_count=0,
     )
 
@@ -211,8 +218,9 @@ async def list_sessions(request: Request) -> list[SessionSummary]:
 async def get_session(session_id: str, request: Request) -> SessionDetail:
     """Get full message history for a session."""
     factory = _get_session_factory(request)
+    now = datetime.now(UTC).isoformat()
     if not factory:
-        return SessionDetail(id=session_id, title="", created_at="", updated_at="", messages=[])
+        return SessionDetail(id=session_id, title="", created_at=now, updated_at=now, messages=[])
 
     async with factory() as db:
         session = await db.get(ChatSession, session_id)
