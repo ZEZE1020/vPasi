@@ -1,7 +1,8 @@
 """
-USSD handler — multi-step menu with real AI responses via the research graph.
+USSD handler — demo flow: ask for question, ask for phone, send SMS in background.
 """
 
+import asyncio
 import logging
 import uuid
 from typing import Any
@@ -12,6 +13,12 @@ from src.services.redis_store import RedisSessionStore
 
 logger = logging.getLogger(__name__)
 
+
+def _truncate_ussd(text: str, max_len: int = 160) -> str:
+    """USSD screens are limited — truncate gracefully."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
 MAIN_MENU = (
     "Welcome to vPasi\n"
     "1. Border requirements\n"
@@ -37,20 +44,13 @@ PROMPTS: dict[str, str] = {
 }
 
 
-def _truncate_ussd(text: str, max_len: int = 160) -> str:
-    """USSD screens are limited — truncate gracefully."""
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3] + "..."
-
-
 async def _run_research(query: str) -> str:
-    """Run the research graph and return a USSD-safe answer."""
+    """Run the research graph and return an answer."""
     try:
         result = await research_graph.ainvoke(
             {
                 "user_query": query,
-                "channel": "ussd",
+                "channel": "sms",  # Target output is SMS
                 "search_queries": [],
                 "search_results": [],
                 "reflection": "",
@@ -64,9 +64,9 @@ async def _run_research(query: str) -> str:
             config={"configurable": {"thread_id": str(uuid.uuid4())}},
         )
         answer = result.get("answer", "")
-        return _truncate_ussd(answer) if answer else "No results found. Try rephrasing."
+        return answer if answer else "No results found. Try rephrasing."
     except Exception:
-        logger.exception("USSD research failed")
+        logger.exception("Research failed")
         return "Service unavailable. Please try again shortly."
 
 
@@ -78,17 +78,22 @@ async def handle_ussd_request(
     redis: RedisSessionStore | None,
 ) -> str:
     """
+    Handle USSD requests (Demo Flow).
+    1. Prompt for trade question.
+    2. Prompt for phone number.
+    3. Kick off background task to research and send SMS.
     Handle USSD requests.
-
-    If Redis is not available, informs the user that the service is
-    temporarily unavailable.
+    1. Show main menu.
+    2. Prompt for specific query based on choice.
+    3. Prompt for phone number.
+    4. Kick off background task to research and send SMS.
     """
     at = get_at_client()
 
     if not redis:
         logger.warning("USSD request received but Redis is not configured")
         return at.format_ussd_response(
-            "The USSD service is temporarily unavailable. Please try our WhatsApp or web channels.",
+            "The USSD service is temporarily unavailable.",
             is_terminal=True,
         )
 
@@ -97,43 +102,83 @@ async def handle_ussd_request(
         extra={"session_id": session_id, "phone": phone_number, "text": text},
     )
 
-    inputs = [i for i in text.split("*")] if text else []
+    raw_text = text.strip()
+    inputs = raw_text.split("*") if raw_text else []
     level = len(inputs)
 
     session: dict[str, Any] = await redis.get_session(session_id) or {
         "phone": phone_number,
+        "inputs": [],
     }
 
-    at = get_at_client()
+    # Handle Swagger sequential inputs vs AT concatenated inputs.
+    if level == 1 and session.get("inputs"):
+        session["inputs"].append(inputs[0])
+        virtual_inputs = session["inputs"]
+    else:
+        virtual_inputs = inputs
+        session["inputs"] = inputs
 
-    # ── Level 0: Show main menu ───────────────────────────────
-    if level == 0:
+    virtual_level = len(virtual_inputs)
+
+    # ── Level 0: show main menu ───────────────────────────────
+    if virtual_level == 0:
+        session["inputs"] = []
         await redis.set_session(session_id, session)
         return at.format_ussd_response(MAIN_MENU)
 
-    choice = inputs[0]
+    # ── Level 1: menu choice ──────────────────────────────────
+    choice = virtual_inputs[0].strip()
 
     if choice == "0":
         await redis.delete_session(session_id)
-        return at.format_ussd_response("Thank you for using vPasi! Safe trading.", is_terminal=True)
+        return at.format_ussd_response(
+            "Thank you for using vPasi! Safe trading.",
+            is_terminal=True,
+        )
 
     if choice not in PROMPTS:
+        session["inputs"] = []
+        await redis.set_session(session_id, session)
         return at.format_ussd_response(f"Invalid option.\n{MAIN_MENU}")
 
-    # ── Level 1: Show sub-menu prompt ─────────────────────────
-    if level == 1:
-        session["choice"] = choice
+    if virtual_level == 1:
         await redis.set_session(session_id, session)
         return at.format_ussd_response(PROMPTS[choice])
 
-    # ── Level 2: User provided input — run research ───────────
-    user_input = "*".join(inputs[1:]).strip()
-    stored_choice = session.get("choice", choice)
-    prefix = QUERY_PREFIXES.get(stored_choice, "")
+    # ── Level 2: collect question text ────────────────────────
+    if virtual_level == 2:
+        await redis.set_session(session_id, session)
+        return at.format_ussd_response(
+            "Please enter your phone number to receive the answer (e.g. 07...):"
+        )
+
+    # ── Level 3: execute research and send SMS ────────────────
+    user_input = "*".join(virtual_inputs[1:-1]).strip()
+    target_phone = virtual_inputs[-1].strip()
+
+    prefix = QUERY_PREFIXES.get(choice, "")
     query = f"{prefix}{user_input}"
 
-    answer = await _run_research(query)
-    response = f"{answer}\n\n0. Main menu"
+    # Basic phone number formatting for demo (assuming Kenya if starts with 0)
+    if target_phone.startswith("0"):
+        target_phone = "+254" + target_phone[1:]
+    elif not target_phone.startswith("+"):
+        target_phone = "+" + target_phone
 
-    await redis.set_session(session_id, session)
-    return at.format_ussd_response(_truncate_ussd(response, 182))
+    # Define a background task to process AI so USSD doesn't timeout
+    async def _research_and_send(q: str, p: str):
+        ans = await _run_research(q)
+        try:
+            await at.send_sms(ans, [p])
+            logger.info(f"Demo SMS sent to {p}")
+        except Exception:
+            logger.exception("Failed to send demo SMS")
+
+    asyncio.create_task(_research_and_send(query, target_phone))
+
+    await redis.delete_session(session_id)
+    return at.format_ussd_response(
+        f"Thank you! Your answer will be sent to {target_phone} via SMS shortly.",
+        is_terminal=True
+    )
