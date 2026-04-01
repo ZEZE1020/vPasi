@@ -1,0 +1,65 @@
+limit_req_zone $binary_remote_addr zone=api_per_ip:10m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=stream_per_ip:10m rate=2r/s;
+
+server {
+  listen ${PORT};
+  server_name _;
+
+  root /usr/share/nginx/html;
+  index index.html;
+
+  add_header X-Content-Type-Options nosniff always;
+  add_header X-Frame-Options DENY always;
+  add_header Referrer-Policy no-referrer-when-downgrade always;
+
+  location /api/research/stream {
+    limit_req zone=stream_per_ip burst=5 nodelay;
+
+    proxy_pass ${BACKEND_URL};
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 3600s;
+    add_header X-Accel-Buffering no;
+
+    error_page 502 503 504 = @api_unavailable;
+  }
+
+  location /api {
+    limit_req zone=api_per_ip burst=40 nodelay;
+
+    proxy_pass ${BACKEND_URL};
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 120s;
+
+    error_page 502 503 504 = @api_unavailable;
+  }
+
+  location = /app {
+    return 302 /app/;
+  }
+
+  location /app/ {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location = / {
+    try_files /index.html =404;
+  }
+
+  location @api_unavailable {
+    default_type application/json;
+    return 503 '{"error":"backend_unavailable","message":"vPasi backend is temporarily unavailable"}';
+  }
+}

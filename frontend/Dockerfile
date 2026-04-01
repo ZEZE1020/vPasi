@@ -25,29 +25,10 @@ RUN npm run build
 # ── Production stage ─────────────────────────────────────────
 FROM nginx:alpine AS prod
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# Nginx template: Cloud Run PORT + runtime backend URL proxy
-RUN mkdir -p /etc/nginx/templates && printf 'server {\n\
-  listen ${PORT};\n\
-  location /api {\n\
-    proxy_pass ${BACKEND_URL};\n\
-    proxy_http_version 1.1;\n\
-    proxy_set_header Connection "";\n\
-    proxy_set_header Host $host;\n\
-    proxy_set_header X-Real-IP $remote_addr;\n\
-    proxy_buffering off;\n\
-    proxy_cache off;\n\
-    proxy_read_timeout 3600s;\n\
-    add_header X-Accel-Buffering no;\n\
-  }\n\
-  location / {\n\
-    root /usr/share/nginx/html;\n\
-    try_files $uri $uri/ /index.html;\n\
-  }\n\
-}\n' > /etc/nginx/templates/default.conf.template
+COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 
 ENV PORT=8080
-ENV BACKEND_URL=http://127.0.0.1:8080
+ENV BACKEND_URL=http://vpasi-backend:8000
 
 EXPOSE 8080
 CMD ["nginx", "-g", "daemon off;"]
